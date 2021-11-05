@@ -1,3 +1,4 @@
+import os
 import torch
 from torch.utils.data import Dataset
 from torch.utils.data.sampler import BatchSampler
@@ -14,16 +15,17 @@ def default_loader(path):
     return img
 
 class RandomDataset(Dataset):
-    def __init__(self, transform=None, dataloader=default_loader):
+    def __init__(self, data_dir, list_dir, transform=None, dataloader=default_loader):
         self.transform = transform
         self.dataloader = dataloader
+        self.data_dir = data_dir
 
-        with open('/home/pqzhuang/data/CUB/CUB_200_2011/val.txt', 'r') as fid:
+        with open(list_dir, 'r') as fid:
             self.imglist = fid.readlines()
 
     def __getitem__(self, index):
-        image_name, label = self.imglist[index].strip().split()
-        image_path = image_name
+        label, image_name = self.imglist[index].strip().split()
+        image_path = os.path.join(self.data_dir, image_name)
         img = self.dataloader(image_path)
         img = self.transform(img)
         label = int(label)
@@ -36,24 +38,25 @@ class RandomDataset(Dataset):
         return len(self.imglist)
 
 class BatchDataset(Dataset):
-    def __init__(self, transform=None, dataloader=default_loader):
+    def __init__(self, data_dir, list_dir, transform=None, dataloader=default_loader):
         self.transform = transform
         self.dataloader = dataloader
+        self.data_dir = data_dir
 
-        with open('/home/pqzhuang/data/CUB/CUB_200_2011/train.txt', 'r') as fid:
+        with open(list_dir, 'r') as fid:
             self.imglist = fid.readlines()
 
         self.labels = []
         for line in self.imglist:
-            image_path, label = line.strip().split()
+            label, image_name = line.strip().split()
             self.labels.append(int(label))
         self.labels = np.array(self.labels)
         self.labels = torch.LongTensor(self.labels)
 
 
     def __getitem__(self, index):
-        image_name, label = self.imglist[index].strip().split()
-        image_path = image_name
+        label, image_name = self.imglist[index].strip().split()
+        image_path = os.path.join(self.data_dir, image_name)
         img = self.dataloader(image_path)
         img = self.transform(img)
         label = int(label)

@@ -20,13 +20,13 @@ parser.add_argument('--exp_name', default=None, type=str,
                     help='name of experiment')
 parser.add_argument('--data', metavar='DIR',default='',
                     help='path to dataset')
-parser.add_argument('-j', '--workers', default=10, type=int, metavar='N',
+parser.add_argument('-j', '--workers', default=2, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
 parser.add_argument('--epochs', default=100, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
-parser.add_argument('-b', '--batch-size', default=100, type=int,
+parser.add_argument('-b', '--batch-size', default=12, type=int,
                     metavar='N', help='mini-batch size (default: 256)')
 parser.add_argument('--lr', '--learning-rate', default=0.01, type=float,
                     metavar='LR', help='initial learning rate')
@@ -34,9 +34,9 @@ parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
                     help='momentum')
 parser.add_argument('--weight-decay', '--wd', default=5e-4, type=float,
                     metavar='W', help='weight decay (default: 1e-4)')
-parser.add_argument('--print-freq', '-p', default=1, type=int,
+parser.add_argument('--print-freq', '-p', default=200, type=int,
                     metavar='N', help='print frequency (default: 10)')
-parser.add_argument('--evaluate-freq', default=10, type=int,
+parser.add_argument('--evaluate-freq', default=1, type=int,
                     help='the evaluation frequence')
 parser.add_argument('--resume', default='./checkpoint.pth.tar', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
@@ -44,9 +44,9 @@ parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
                     help='evaluate model on validation set')
 parser.add_argument('--pretrained', dest='pretrained', action='store_true',
                     help='use pre-trained model')
-parser.add_argument('--n_classes', default=30, type=int,
+parser.add_argument('--n_classes', default=4, type=int,
                     help='the number of classes')
-parser.add_argument('--n_samples', default=4, type=int,
+parser.add_argument('--n_samples', default=3, type=int,
                     help='the number of samples per class')
 
 
@@ -78,46 +78,66 @@ def main():
                                 weight_decay=args.weight_decay)
     if args.resume:
         if os.path.isfile(args.resume):
-            print 'loading checkpoint {}'.format(args.resume)
+            print('loading checkpoint {}'.format(args.resume))
             checkpoint = torch.load(args.resume)
             args.start_epoch = checkpoint['epoch']
             best_prec1 = checkpoint['best_prec1']
             model.load_state_dict(checkpoint['state_dict'])
             optimizer_conv.load_state_dict(checkpoint['optimizer_conv'])
             optimizer_fc.load_state_dict(checkpoint['optimizer_fc'])
-            print 'loaded checkpoint {}(epoch {})'.format(args.resume, checkpoint['epoch'])
+            print('loaded checkpoint {}(epoch {})'.format(args.resume, checkpoint['epoch']))
         else:
-            print 'no checkpoint found at {}'.format(args.resume)
+            print('no checkpoint found at {}'.format(args.resume))
 
 
     cudnn.benchmark = True
     # Data loading code
-    train_dataset = BatchDataset(transform=transforms.Compose([
-                                            transforms.Resize([512,512]),
-                                            transforms.RandomCrop([448,448]),
-                                            transforms.RandomHorizontalFlip(),
-                                            transforms.ToTensor(),
-                                            transforms.Normalize(
-                                                mean=(0.485, 0.456, 0.406),
-                                                std=(0.229, 0.224, 0.225)
-                                            )]))
-                                            
+    train_dataset = BatchDataset(
+        data_dir=r'D:\DATASET\CUB_200_2011\CUB_200_2011',
+        list_dir=r'D:\DATASET\CUB_200_2011\CUB_200_2011\train.txt',
+        transform=transforms.Compose([
+            transforms.Resize([512,512]),
+            transforms.RandomCrop([448,448]),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+        ])
+    )                                   
     train_sampler = BalancedBatchSampler(train_dataset, args.n_classes, args.n_samples)
     train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_sampler=train_sampler,
-        num_workers=args.workers, pin_memory=True)
+        num_workers=args.workers, pin_memory=True
+    )
+
+    val_dataset = RandomDataset(
+        data_dir=r'D:\DATASET\CUB_200_2011\CUB_200_2011',
+        list_dir=r'D:\DATASET\CUB_200_2011\CUB_200_2011\val.txt',
+        transform=transforms.Compose([
+            transforms.Resize([512,512]),
+            transforms.CenterCrop([448,448]),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+        ])
+    )
+    val_loader = torch.utils.data.DataLoader(
+        val_dataset, batch_size=args.batch_size, shuffle=False,
+        num_workers=args.workers, pin_memory=True
+    )
+
+
     scheduler_conv = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_conv, 100*len(train_loader))
     scheduler_fc = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_fc, 100*len(train_loader))
 
+
     step = 0
-    print 'START TIME:', time.asctime(time.localtime(time.time()))
+    print('START TIME:', time.asctime(time.localtime(time.time())))
     for epoch in range(args.start_epoch, args.epochs):
-        step = train(train_loader, model, criterion, optimizer_conv, scheduler_conv, optimizer_fc, scheduler_fc, epoch, step)
+        step = train(train_loader, val_loader, model, criterion, optimizer_conv, scheduler_conv, optimizer_fc, scheduler_fc, epoch, step)
 
 
 
 
-def train(train_loader, model, criterion, optimizer_conv,scheduler_conv, optimizer_fc, scheduler_fc, epoch, step):
+def train(train_loader, val_loader, model, criterion, optimizer_conv,scheduler_conv, optimizer_fc, scheduler_fc, epoch, step):
     global best_prec1
 
     batch_time = AverageMeter()
@@ -207,17 +227,6 @@ def train(train_loader, model, criterion, optimizer_conv,scheduler_conv, optimiz
                    top1=top1, top5=top5, step=step, time= time.asctime(time.localtime(time.time()))))
 
         if i== len(train_loader) - 1:
-            val_dataset = RandomDataset(transform=transforms.Compose([
-                transforms.Resize([512,512]),
-                transforms.CenterCrop([448,448]),
-                transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=(0.485, 0.456, 0.406),
-                    std=(0.229, 0.224, 0.225)
-                )]))
-            val_loader = torch.utils.data.DataLoader(
-                val_dataset, batch_size=args.batch_size, shuffle=False,
-                num_workers=args.workers, pin_memory=True)
             prec1 = validate(val_loader, model, criterion)
 
             # remember best prec@1 and save checkpoint
