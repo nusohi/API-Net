@@ -10,6 +10,7 @@ import torchvision.transforms as transforms
 import numpy as np
 from models import API_Net 
 from datasets import RandomDataset, BatchDataset, BalancedBatchSampler
+from networks.apinet import APINet
 from utils import accuracy, AverageMeter, save_checkpoint
 
 
@@ -62,7 +63,8 @@ def main():
 
 
     # create model
-    model = API_Net()
+    # model = API_Net()
+    model = APINet()
     model = model.to(device)
     model.conv = nn.DataParallel(model.conv)
 
@@ -93,7 +95,7 @@ def main():
     cudnn.benchmark = True
     # Data loading code
     train_dataset = BatchDataset(
-        data_dir=r'D:\DATASET\CUB_200_2011\CUB_200_2011',
+        data_dir=r'D:\DATASET\CUB_200_2011\CUB_200_2011\images',
         list_dir=r'D:\DATASET\CUB_200_2011\CUB_200_2011\train.txt',
         transform=transforms.Compose([
             transforms.Resize([512,512]),
@@ -110,7 +112,7 @@ def main():
     )
 
     val_dataset = RandomDataset(
-        data_dir=r'D:\DATASET\CUB_200_2011\CUB_200_2011',
+        data_dir=r'D:\DATASET\CUB_200_2011\CUB_200_2011\images',
         list_dir=r'D:\DATASET\CUB_200_2011\CUB_200_2011\val.txt',
         transform=transforms.Compose([
             transforms.Resize([512,512]),
@@ -155,6 +157,8 @@ def train(train_loader, val_loader, model, criterion, optimizer_conv,scheduler_c
 
     for i, (input, target) in enumerate(train_loader):
         model.train()
+        if i==91:
+            print()
 
         # measure data loading time
         data_time.update(time.time() - end)
@@ -179,6 +183,9 @@ def train(train_loader, val_loader, model, criterion, optimizer_conv,scheduler_c
         logits = torch.cat([self_logits, other_logits], dim=0)
         targets = torch.cat([labels1, labels2, labels1, labels2], dim=0)
         softmax_loss = criterion(logits, targets)
+        if (np.any(np.isnan(softmax_loss.detach().cpu().numpy()))):
+            print(softmax_loss)
+            pass
 
         self_scores = softmax_layer(self_logits)[torch.arange(2*batch_size).to(device).long(),
                                                          torch.cat([labels1, labels2], dim=0)]
@@ -226,22 +233,22 @@ def train(train_loader, val_loader, model, criterion, optimizer_conv,scheduler_c
                    data_time=data_time, loss=losses, softmax_loss=softmax_losses, rank_loss=rank_losses,
                    top1=top1, top5=top5, step=step, time= time.asctime(time.localtime(time.time()))))
 
-        if i== len(train_loader) - 1:
-            prec1 = validate(val_loader, model, criterion)
+        # if i== len(train_loader) - 1:
+    prec1 = validate(val_loader, model, criterion)
 
-            # remember best prec@1 and save checkpoint
-            is_best = prec1 > best_prec1
-            best_prec1 = max(prec1, best_prec1)
-            save_checkpoint({
-                'epoch': epoch + 1,
-                'state_dict': model.state_dict(),
-                'best_prec1': best_prec1,
-                'optimizer_conv': optimizer_conv.state_dict(),
-                'optimizer_fc': optimizer_fc.state_dict(),
-            }, is_best)
+    # remember best prec@1 and save checkpoint
+    is_best = prec1 > best_prec1
+    best_prec1 = max(prec1, best_prec1)
+    save_checkpoint({
+        'epoch': epoch + 1,
+        'state_dict': model.state_dict(),
+        'best_prec1': best_prec1,
+        'optimizer_conv': optimizer_conv.state_dict(),
+        'optimizer_fc': optimizer_fc.state_dict(),
+    }, is_best)
 
-        step = step +1
-    return step
+        # step = step +1
+    # return step
 
 
 

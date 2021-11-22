@@ -138,3 +138,5 @@ dmypy.json
 cython_debug/
 
 .vscode/
+*.pth.tar
+read_error.txt
